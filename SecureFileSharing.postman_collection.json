@@ -1,0 +1,273 @@
+{
+  "info": {
+    "name": "Secure File Sharing API",
+    "_postman_id": "secure-file-sharing-collection",
+    "description": "Test collection for the Secure File Sharing API.\n\nFlow:\n1. Run 'Upload File' → copy the 'otp' from the response\n2. Paste the OTP into 'Verify OTP' and run it → copy the 'downloadUrl' token\n3. Paste the token into 'Download File' and run it\n\nThe collection variable {{base_url}} defaults to http://localhost:8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "download_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Upload File",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    pm.collectionVariables.set('otp', body.otp);",
+              "    console.log('OTP saved to collection variable:', body.otp);",
+              "    pm.test('Upload successful', () => pm.expect(body.success).to.be.true);",
+              "    pm.test('OTP is 6 digits', () => pm.expect(body.otp).to.match(/^\\d{6}$/));",
+              "    pm.test('expiresAt is present', () => pm.expect(body.expiresAt).to.be.a('string'));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "Select any file from your machine (max 50 MB)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/files/upload",
+          "host": ["{{base_url}}"],
+          "path": ["api", "files", "upload"]
+        },
+        "description": "Upload a file. The response contains a 6-digit numeric OTP.\n\nThe test script automatically saves the OTP into the {{otp}} collection variable so you don't have to copy it manually."
+      }
+    },
+    {
+      "name": "2. Verify OTP",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    const token = body.downloadUrl.split('/').pop();",
+              "    pm.collectionVariables.set('download_token', token);",
+              "    console.log('Download token saved:', token);",
+              "    pm.test('Verify successful', () => pm.expect(body.success).to.be.true);",
+              "    pm.test('downloadUrl is present', () => pm.expect(body.downloadUrl).to.be.a('string'));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/files/verify-otp?otp={{otp}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "files", "verify-otp"],
+          "query": [
+            {
+              "key": "otp",
+              "value": "{{otp}}",
+              "description": "6-digit numeric OTP from the upload response (auto-filled by collection variable)"
+            }
+          ]
+        },
+        "description": "Verify the OTP received after upload. On success the OTP is consumed (one-time use) and a download URL is returned.\n\nThe test script automatically saves the download token into {{download_token}}."
+      }
+    },
+    {
+      "name": "3. Download File",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/files/download/{{download_token}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "files", "download", "{{download_token}}"]
+        },
+        "description": "Download the file using the token from the Verify OTP response.\n\nValid as long as the 10-minute upload window has not expired — even if the OTP was used several minutes ago.\n\nThe response is the raw file with Content-Disposition: attachment."
+      }
+    },
+    {
+      "name": "Edge Cases",
+      "item": [
+        {
+          "name": "Upload – No File (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 400', () => pm.expect(pm.response.code).to.equal(400));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": []
+            },
+            "url": {
+              "raw": "{{base_url}}/api/files/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files", "upload"]
+            },
+            "description": "Sending no file should return 400 Bad Request."
+          }
+        },
+        {
+          "name": "Verify OTP – Wrong OTP (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404', () => pm.expect(pm.response.code).to.equal(404));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/files/verify-otp?otp=000000",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files", "verify-otp"],
+              "query": [
+                {
+                  "key": "otp",
+                  "value": "000000"
+                }
+              ]
+            },
+            "description": "A non-existent OTP should return 404 Not Found."
+          }
+        },
+        {
+          "name": "Verify OTP – Non-Numeric (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 400', () => pm.expect(pm.response.code).to.equal(400));",
+                  "pm.test('Error mentions 6-digit', () => pm.expect(pm.response.json().error).to.include('6-digit'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/files/verify-otp?otp=ABCDEF",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files", "verify-otp"],
+              "query": [
+                {
+                  "key": "otp",
+                  "value": "ABCDEF"
+                }
+              ]
+            },
+            "description": "A non-numeric OTP should be rejected with 400 Bad Request."
+          }
+        },
+        {
+          "name": "Verify OTP – Already Used (410)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 410 Gone', () => pm.expect(pm.response.code).to.equal(410));",
+                  "pm.test('Error mentions already used', () => pm.expect(pm.response.json().error).to.include('already been used'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/files/verify-otp?otp={{otp}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files", "verify-otp"],
+              "query": [
+                {
+                  "key": "otp",
+                  "value": "{{otp}}",
+                  "description": "Run this AFTER 'Verify OTP' has already consumed the OTP"
+                }
+              ]
+            },
+            "description": "Run this after '2. Verify OTP' has already consumed the OTP. Should return 410 Gone."
+          }
+        },
+        {
+          "name": "Download – Invalid Token (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404', () => pm.expect(pm.response.code).to.equal(404));",
+                  "pm.test('success is false', () => pm.expect(pm.response.json().success).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/files/download/00000000-0000-0000-0000-000000000000",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files", "download", "00000000-0000-0000-0000-000000000000"]
+            },
+            "description": "A bogus download token should return 404 Not Found."
+          }
+        }
+      ]
+    }
+  ]
+}
